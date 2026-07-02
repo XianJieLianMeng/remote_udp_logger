@@ -1,0 +1,18 @@
+{
+  "name": "remote_udp_logger",
+  "version": "1.0.0",
+  "description": "ESP-IDF UDP log mirror plus Windows desktop log viewer with device IMEI filtering.",
+  "esp_component": "components/remote_udp_logger",
+  "host_tool": "host_tool",
+  "installer": "install_esp_component.ps1",
+  "docs": "docs/integration-guide.md",
+  "publishing": "docs/publishing.md",
+  "default_udp_target": "255.255.255.255:8001",
+  "features": [
+    "Mirror ESP_LOG output to UDP",
+    "Prefix UDP logs with device id / IMEI",
+    "Receive logs without USB serial cable",
+    "Filter desktop logs by IMEI",
+    "Show source IP and UDP source port"
+  ]
+}

@@ -1,0 +1,20 @@
+menu "Remote UDP Logger Basic Example"
+
+config EXAMPLE_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+    help
+        Wi-Fi SSID used by the basic remote UDP logger example.
+
+config EXAMPLE_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+    help
+        Wi-Fi password used by the basic remote UDP logger example.
+
+config EXAMPLE_WIFI_MAXIMUM_RETRY
+    int "Maximum Wi-Fi retry count"
+    default 5
+    range 1 20
+
+endmenu

@@ -1,0 +1,27 @@
+version: "0.1.0"
+description: "Mirror ESP-IDF logs to UDP and prefix log lines with a device id for wireless debugging."
+license: "MIT"
+tags:
+  - logging
+  - udp
+  - wifi
+  - debug
+  - diagnostics
+dependencies:
+  idf: ">=5.0"
+files:
+  exclude:
+    - "build/**/*"
+    - "dist/**/*"
+    - "managed_components/**/*"
+    - "sdkconfig"
+    - "sdkconfig.old"
+    - "**/__pycache__/**/*"
+
+# Fill these before uploading to the public registry.
+# maintainers:
+#   - Your Name <you@example.com>
+# url: "https://github.com/your-org/remote_udp_logger"
+# repository: "https://github.com/your-org/remote_udp_logger.git"
+# documentation: "https://github.com/your-org/remote_udp_logger#readme"
+# issues: "https://github.com/your-org/remote_udp_logger/issues"

@@ -1,0 +1,3 @@
+dependencies:
+  remote_udp_logger:
+    path: ../../..

@@ -1,0 +1,47 @@
+menu "Remote UDP Logger Plugin"
+
+config REMOTE_UDP_LOGGER_ENABLE
+    bool "Enable Remote UDP Logger"
+    default n
+    help
+        Mirror ESP_LOG output to a UDP endpoint so logs can be viewed without a USB cable.
+
+config REMOTE_UDP_LOGGER_TARGET
+    string "Remote UDP Log Target"
+    default "255.255.255.255:8001"
+    depends on REMOTE_UDP_LOGGER_ENABLE
+    help
+        UDP target address in IP:PORT format. Use 255.255.255.255 for LAN broadcast.
+
+config REMOTE_UDP_LOGGER_INCLUDE_DEVICE_ID
+    bool "Prefix UDP logs with device id"
+    default y
+    depends on REMOTE_UDP_LOGGER_ENABLE
+    help
+        Prefix each UDP log line with [imei=<device-id> seq=<number>] so the
+        desktop tool can filter devices and detect sequence gaps.
+
+config REMOTE_UDP_LOGGER_DEVICE_ID
+    string "Default device id"
+    default "unknown"
+    depends on REMOTE_UDP_LOGGER_ENABLE && REMOTE_UDP_LOGGER_INCLUDE_DEVICE_ID
+    help
+        Fallback device id if RemoteUdpLogger::SetDeviceId() is not called.
+
+config REMOTE_UDP_LOGGER_LINE_BUFFER_SIZE
+    int "Single log line buffer size"
+    default 512
+    range 128 4096
+    depends on REMOTE_UDP_LOGGER_ENABLE
+    help
+        Maximum bytes copied from a single ESP_LOG formatted line before UDP prefixing.
+
+config REMOTE_UDP_LOGGER_PACKET_BUFFER_SIZE
+    int "UDP packet buffer size"
+    default 768
+    range 256 4096
+    depends on REMOTE_UDP_LOGGER_ENABLE
+    help
+        Maximum UDP payload bytes after prefixing the log line with device id.
+
+endmenu
