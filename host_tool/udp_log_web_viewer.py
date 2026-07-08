@@ -9,6 +9,7 @@ import webbrowser
 from collections import deque
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 from udp_log_env import ensure_supported_python
 
@@ -223,6 +224,9 @@ HTML_PAGE = """<!doctype html>
         <option value="D">D</option>
         <option value="V">V</option>
       </select>
+      <select id="deviceFilter">
+        <option value="">全部设备</option>
+      </select>
       <input id="featureFilter" type="text" placeholder="feature，例如 device_msg.eval">
       <button id="pauseBtn">暂停显示</button>
       <button id="toggleBtn" class="secondary">暂停自动滚动</button>
@@ -244,6 +248,7 @@ HTML_PAGE = """<!doctype html>
     const logEl = document.getElementById("log");
     const filterEl = document.getElementById("filter");
     const levelFilterEl = document.getElementById("levelFilter");
+    const deviceFilterEl = document.getElementById("deviceFilter");
     const featureFilterEl = document.getElementById("featureFilter");
     const dotEl = document.getElementById("dot");
     const connTextEl = document.getElementById("connText");
@@ -276,6 +281,18 @@ HTML_PAGE = """<!doctype html>
       return (record.feature || "") === "udp.seq";
     }
 
+    const knownDevices = new Set();
+
+    function registerDevice(record) {
+      const imei = record.imei || "";
+      if (!imei || imei === "-" || knownDevices.has(imei)) return;
+      knownDevices.add(imei);
+      const option = document.createElement("option");
+      option.value = imei;
+      option.textContent = imei;
+      deviceFilterEl.appendChild(option);
+    }
+
     function escapeHtml(value) {
       return (value || "")
         .replaceAll("&", "&amp;")
@@ -298,7 +315,9 @@ HTML_PAGE = """<!doctype html>
     function passesFilters(record) {
       const keyword = filterEl.value.trim().toLowerCase();
       const level = levelFilterEl.value;
+      const device = deviceFilterEl.value;
       const feature = featureFilterEl.value.trim().toLowerCase();
+      if (device && record.imei !== device) return false;
       if (level && record.level !== level) return false;
       if (feature && !(record.feature || "").toLowerCase().includes(feature)) return false;
       if (!keyword) return true;
@@ -365,6 +384,7 @@ HTML_PAGE = """<!doctype html>
       state.warnings = 0;
       state.gaps = 0;
       state.lines.forEach(countRecord);
+      state.lines.forEach(registerDevice);
       state.udpTarget = data.udp_target || "";
       udpTargetEl.textContent = state.udpTarget || "-";
       render();
@@ -372,6 +392,7 @@ HTML_PAGE = """<!doctype html>
 
     filterEl.addEventListener("input", render);
     levelFilterEl.addEventListener("change", render);
+    deviceFilterEl.addEventListener("change", render);
     featureFilterEl.addEventListener("input", render);
     pauseBtn.addEventListener("click", () => {
       state.paused = !state.paused;
@@ -389,11 +410,15 @@ HTML_PAGE = """<!doctype html>
       state.gaps = 0;
       render();
     });
+    function exportQuery() {
+      const device = deviceFilterEl.value;
+      return device ? "?imei=" + encodeURIComponent(device) : "";
+    }
     exportBtn.addEventListener("click", async () => {
-      await downloadFile("/download", "udp_logs.log");
+      await downloadFile("/download" + exportQuery(), "udp_logs.log");
     });
     exportJsonBtn.addEventListener("click", async () => {
-      await downloadFile("/download-jsonl", "udp_logs.jsonl");
+      await downloadFile("/download-jsonl" + exportQuery(), "udp_logs.jsonl");
     });
     async function downloadFile(path, fallbackName) {
       try {
@@ -442,6 +467,7 @@ HTML_PAGE = """<!doctype html>
           state.lines.splice(0, state.lines.length - MAX_LINES);
         }
         countRecord(payload);
+        registerDevice(payload);
         if (state.paused) {
           updateStats();
         } else {
@@ -507,22 +533,40 @@ class LogHub:
         with self._lock:
             return list(self._lines), self._last_source
 
-    def export_text(self) -> str:
+    def export_text(self, imei: str = "") -> str:
         text = self._journal.read_text()
-        if text:
+        if not text:
+            with self._lock:
+                text = "".join(record["line"] for record in self._lines)
+        if not imei:
             return text
-        with self._lock:
-            return "".join(record["line"] for record in self._lines)
+        # Session lines carry an "[imei=<id> source=...]" prefix; sequence-gap
+        # notices embed "imei=<id> " in their body. Both stay in the export.
+        marker = f"imei={imei} "
+        return "".join(
+            line + "\n" for line in text.splitlines() if marker in line
+        )
 
-    def export_filename(self) -> str:
-        return self._journal.path.name
+    def export_filename(self, imei: str = "") -> str:
+        name = self._journal.path.name
+        return f"{imei}_{name}" if imei else name
 
-    def export_jsonl_text(self) -> str:
+    def export_jsonl_text(self, imei: str = "") -> str:
         text = self._jsonl_journal.read_text()
-        if text:
+        if not text:
+            with self._lock:
+                text = "".join(self._payload_to_jsonl_line(record) for record in self._lines)
+        if not imei:
             return text
-        with self._lock:
-            return "".join(self._payload_to_jsonl_line(record) for record in self._lines)
+        kept: list[str] = []
+        for line in text.splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("imei") == imei or f"imei={imei} " in str(record.get("text", "")):
+                kept.append(line + "\n")
+        return "".join(kept)
 
     def _payload_to_jsonl_line(self, record: dict) -> str:
         jsonl_fields = (
@@ -545,8 +589,9 @@ class LogHub:
             + "\n"
         )
 
-    def export_jsonl_filename(self) -> str:
-        return self._jsonl_journal.path.name
+    def export_jsonl_filename(self, imei: str = "") -> str:
+        name = self._jsonl_journal.path.name
+        return f"{imei}_{name}" if imei else name
 
     def subscribe(self) -> queue.Queue:
         subscriber = queue.Queue()
@@ -570,19 +615,21 @@ def make_handler(log_hub: LogHub, udp_target: str):
             return
 
         def do_GET(self):
-            if self.path == "/":
+            parsed = urlparse(self.path)
+            imei = (parse_qs(parsed.query).get("imei") or [""])[0]
+            if parsed.path == "/":
                 self._send_html()
                 return
-            if self.path == "/history":
+            if parsed.path == "/history":
                 self._send_history()
                 return
-            if self.path == "/download":
-                self._send_download()
+            if parsed.path == "/download":
+                self._send_download(imei)
                 return
-            if self.path == "/download-jsonl":
-                self._send_jsonl_download()
+            if parsed.path == "/download-jsonl":
+                self._send_jsonl_download(imei)
                 return
-            if self.path == "/events":
+            if parsed.path == "/events":
                 self._stream_events()
                 return
 
@@ -613,9 +660,9 @@ def make_handler(log_hub: LogHub, udp_target: str):
             self.end_headers()
             self.wfile.write(payload)
 
-        def _send_download(self):
-            body = log_hub.export_text().encode("utf-8")
-            filename = log_hub.export_filename()
+        def _send_download(self, imei: str = ""):
+            body = log_hub.export_text(imei).encode("utf-8")
+            filename = log_hub.export_filename(imei)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -624,9 +671,9 @@ def make_handler(log_hub: LogHub, udp_target: str):
             self.end_headers()
             self.wfile.write(body)
 
-        def _send_jsonl_download(self):
-            body = log_hub.export_jsonl_text().encode("utf-8")
-            filename = log_hub.export_jsonl_filename()
+        def _send_jsonl_download(self, imei: str = ""):
+            body = log_hub.export_jsonl_text(imei).encode("utf-8")
+            filename = log_hub.export_jsonl_filename(imei)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
