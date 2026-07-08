@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import html
 import json
 import queue
 import socket
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -53,6 +55,22 @@ CONFIG_FILE_NAME = "udp_log_gui_config.json"
 MAX_DISPLAY_LOG_LINES = 4000
 SOCKET_TIMEOUT_SEC = 0.5
 PROJECT_DEFAULT_DEVICE_TARGET = "255.255.255.255:8001"
+
+LEVEL_COLORS = {
+    "E": "#ff7676",
+    "W": "#ffc46b",
+    "I": "#dbe6ff",
+    "D": "#9fb3dd",
+    "V": "#7f92bf",
+}
+GAP_COLOR = "#c792ea"
+
+STATUS_STYLES = {
+    "idle": "background: #2a3450; color: #b9c7e6;",
+    "listening": "background: #17402c; color: #8dffb3;",
+    "paused": "background: #4d3d18; color: #ffd27d;",
+    "stopped": "background: #4a2531; color: #ff9f9f;",
+}
 
 
 def get_app_dir() -> Path:
@@ -180,6 +198,11 @@ class UdpLogGui(QMainWindow):
         self.receiver: UdpReceiver | None = None
         self.detected_target_value = ""
         self.running = False
+        self.paused = False
+        self.error_count = 0
+        self.warning_count = 0
+        self.gap_count = 0
+        self.shown_count = 0
         self.journal = UdpLogJournal("udp_gui_session")
         self.jsonl_journal = UdpLogJournal("udp_gui_session", suffix=".jsonl")
         self.sequence_tracker = UdpLogSequenceTracker()
@@ -197,6 +220,7 @@ class UdpLogGui(QMainWindow):
 
         self._connect_signals()
         self.refresh_network_info()
+        self._set_status("idle", "Idle - configure receiver, then press Start")
 
         self.queue_timer = QTimer(self)
         self.queue_timer.setInterval(100)
@@ -204,8 +228,11 @@ class UdpLogGui(QMainWindow):
         self.queue_timer.start()
 
         if auto_start:
-            self.start_receiver()
+            self.toggle_receiver()
 
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
     def _build_ui(self) -> None:
         self.setStyleSheet(
             """
@@ -220,115 +247,173 @@ class UdpLogGui(QMainWindow):
                 padding: 7px 9px;
                 selection-background-color: #4267d5;
             }
+            QComboBox {
+                background: #0f172a;
+                border: 1px solid #30405f;
+                border-radius: 6px;
+                color: #e4ecff;
+                padding: 6px 9px;
+            }
+            QComboBox QAbstractItemView {
+                background: #141d33;
+                color: #e4ecff;
+                selection-background-color: #4267d5;
+            }
             QPushButton {
                 background: #263759;
                 border: 1px solid #3a4d73;
                 border-radius: 6px;
                 color: #e4ecff;
-                padding: 8px 12px;
+                padding: 8px 14px;
             }
             QPushButton:hover { background: #304568; }
             QPushButton:pressed { background: #1c2a46; }
+            QPushButton#primary {
+                background: #2f6b46;
+                border: 1px solid #3f8f5e;
+                font-weight: 700;
+            }
+            QPushButton#primary:hover { background: #38804f; }
+            QPushButton#primary[running="true"] {
+                background: #6b3040;
+                border: 1px solid #8f4054;
+            }
+            QPushButton#primary[running="true"]:hover { background: #7d3a4c; }
+            QPushButton#pause:checked {
+                background: #4d3d18;
+                border: 1px solid #806524;
+                color: #ffd27d;
+            }
+            QToolButton {
+                background: transparent;
+                border: none;
+                color: #b9c7e6;
+                font-weight: 700;
+                padding: 4px;
+            }
             QCheckBox { color: #e4ecff; spacing: 8px; }
             QPlainTextEdit {
-                background: #121a30;
+                background: #0b1020;
                 border: 1px solid #263759;
                 border-radius: 8px;
                 color: #dbe6ff;
                 padding: 10px;
                 selection-background-color: #4267d5;
                 font-family: Consolas, "Courier New", monospace;
-                font-size: 11pt;
+                font-size: 10.5pt;
             }
+            QStatusBar { color: #8ea2d0; }
             """
         )
 
         central = QWidget(self)
         root = QVBoxLayout(central)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
+        root.setContentsMargins(16, 14, 16, 8)
+        root.setSpacing(10)
         self.setCentralWidget(central)
 
+        # -- Header: title + status pill + counters ----------------------
+        header = QHBoxLayout()
+        header.setSpacing(12)
+        root.addLayout(header)
+
         title = QLabel("Xbell Wireless Log Viewer")
-        title.setStyleSheet("font-size: 20px; font-weight: 700;")
-        root.addWidget(title)
-
-        subtitle = QLabel(
-            "Battery-powered device logs over UDP. Configure host/port here, then click Start."
-        )
-        subtitle.setStyleSheet("color: #b9c7e6;")
-        root.addWidget(subtitle)
-
-        card = QFrame()
-        card.setObjectName("card")
-        grid = QGridLayout(card)
-        grid.setContentsMargins(14, 14, 14, 14)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(8)
-        root.addWidget(card)
-
-        config_title = QLabel("Receiver Settings")
-        config_title.setStyleSheet("font-weight: 700;")
-        grid.addWidget(config_title, 0, 0, 1, 2)
+        title.setStyleSheet("font-size: 19px; font-weight: 700;")
+        header.addWidget(title)
 
         self.status_label = QLabel("Idle")
-        self.status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(self.status_label, 0, 2, 1, 5)
+        self.status_label.setStyleSheet(
+            f"{STATUS_STYLES['idle']} border-radius: 10px; padding: 4px 12px; font-weight: 600;"
+        )
+        header.addWidget(self.status_label)
+        header.addStretch(1)
 
-        grid.addWidget(QLabel("UDP Host"), 1, 0)
+        self.stats_label = QLabel("")
+        self.stats_label.setStyleSheet("color: #b9c7e6; font-size: 12px;")
+        header.addWidget(self.stats_label)
+
+        # -- Action toolbar ----------------------------------------------
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        root.addLayout(actions)
+
+        self.start_stop_button = QPushButton("▶  Start")
+        self.start_stop_button.setObjectName("primary")
+        self.start_stop_button.setMinimumWidth(120)
+        actions.addWidget(self.start_stop_button)
+
+        self.pause_button = QPushButton("⏸  Pause View")
+        self.pause_button.setObjectName("pause")
+        self.pause_button.setCheckable(True)
+        self.pause_button.setToolTip(
+            "Freeze the on-screen view. Logs keep being received and written to the session file."
+        )
+        actions.addWidget(self.pause_button)
+
+        self.save_button = QPushButton("Export Logs")
+        self.clear_button = QPushButton("Clear")
+        actions.addWidget(self.save_button)
+        actions.addWidget(self.clear_button)
+        actions.addStretch(1)
+
+        self.settings_toggle = QToolButton()
+        self.settings_toggle.setText("Receiver Settings")
+        self.settings_toggle.setCheckable(True)
+        self.settings_toggle.setChecked(True)
+        self.settings_toggle.setArrowType(Qt.DownArrow)
+        self.settings_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        actions.addWidget(self.settings_toggle)
+
+        # -- Collapsible settings card ------------------------------------
+        self.settings_card = QFrame()
+        self.settings_card.setObjectName("card")
+        grid = QGridLayout(self.settings_card)
+        grid.setContentsMargins(14, 12, 14, 12)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        root.addWidget(self.settings_card)
+
+        grid.addWidget(QLabel("UDP Host"), 0, 0)
         self.udp_host_edit = QLineEdit("0.0.0.0")
         self.udp_host_edit.setMinimumWidth(150)
-        grid.addWidget(self.udp_host_edit, 2, 0)
+        grid.addWidget(self.udp_host_edit, 1, 0)
 
-        grid.addWidget(QLabel("UDP Port"), 1, 1)
+        grid.addWidget(QLabel("UDP Port"), 0, 1)
         self.udp_port_edit = QLineEdit("8001")
         self.udp_port_edit.setValidator(QIntValidator(1, 65535, self))
         self.udp_port_edit.setMaximumWidth(110)
-        grid.addWidget(self.udp_port_edit, 2, 1)
+        grid.addWidget(self.udp_port_edit, 1, 1)
 
-        self.start_button = QPushButton("Start")
-        self.stop_button = QPushButton("Stop")
-        self.save_button = QPushButton("Export Logs")
-        self.clear_button = QPushButton("Clear")
         self.refresh_button = QPushButton("Refresh IP")
-        grid.addWidget(self.start_button, 2, 2)
-        grid.addWidget(self.stop_button, 2, 3)
-        grid.addWidget(self.save_button, 2, 4)
-        grid.addWidget(self.clear_button, 2, 5)
-        grid.addWidget(self.refresh_button, 2, 6)
+        grid.addWidget(self.refresh_button, 1, 2)
 
         hint = QLabel(
-            "Tip: keep UDP Host = 0.0.0.0 for receiving. Device Target is a copy-friendly value for the device-side log setting."
+            "Keep UDP Host = 0.0.0.0 for receiving. Device Target is the copy-friendly value "
+            "for the device-side log setting."
         )
-        hint.setStyleSheet("color: #b9c7e6;")
-        grid.addWidget(hint, 3, 0, 1, 7)
+        hint.setStyleSheet("color: #8ea2d0; font-size: 12px;")
+        grid.addWidget(hint, 2, 0, 1, 6)
 
-        self.local_ips_label = QLabel("Local IPv4: detecting...")
-        self.preferred_ip_label = QLabel("Preferred IP: -")
-        self.detected_target_label = QLabel("Detected PC target: -")
-        grid.addWidget(self.local_ips_label, 4, 0, 1, 7)
-        grid.addWidget(self.preferred_ip_label, 5, 0, 1, 7)
-        grid.addWidget(self.detected_target_label, 6, 0, 1, 7)
+        self.network_info_label = QLabel("Local IPv4: detecting...")
+        self.network_info_label.setStyleSheet("color: #b9c7e6; font-size: 12px;")
+        grid.addWidget(self.network_info_label, 3, 0, 1, 6)
 
-        grid.addWidget(QLabel("Device Target"), 7, 0)
+        grid.addWidget(QLabel("Device Target"), 4, 0)
         self.device_target_edit = QLineEdit(PROJECT_DEFAULT_DEVICE_TARGET)
-        self.device_target_edit.setMinimumWidth(260)
-        grid.addWidget(self.device_target_edit, 8, 0, 1, 2)
+        self.device_target_edit.setMinimumWidth(240)
+        grid.addWidget(self.device_target_edit, 5, 0, 1, 2)
 
         self.use_detected_button = QPushButton("Use Detected IP")
         self.use_default_button = QPushButton("Use Project Default")
         self.copy_target_button = QPushButton("Copy Device Target")
-        grid.addWidget(self.use_detected_button, 8, 2)
-        grid.addWidget(self.use_default_button, 8, 3, 1, 2)
-        grid.addWidget(self.copy_target_button, 8, 5, 1, 2)
+        grid.addWidget(self.use_detected_button, 5, 2)
+        grid.addWidget(self.use_default_button, 5, 3)
+        grid.addWidget(self.copy_target_button, 5, 4)
 
-        default_label = QLabel(f"Project default example: {PROJECT_DEFAULT_DEVICE_TARGET}")
-        default_label.setStyleSheet("color: #b9c7e6;")
-        grid.addWidget(default_label, 9, 0, 1, 7)
+        for column in range(6):
+            grid.setColumnStretch(column, 1 if column == 5 else 0)
 
-        for column in range(7):
-            grid.setColumnStretch(column, 1 if column in (0, 2, 3, 4, 5, 6) else 0)
-
+        # -- Filter toolbar ------------------------------------------------
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
         root.addLayout(toolbar)
@@ -340,19 +425,22 @@ class UdpLogGui(QMainWindow):
 
         self.level_combo = QComboBox()
         self.level_combo.addItem("All Levels", "")
-        for level in ("E", "W", "I", "D", "V"):
-            self.level_combo.addItem(level, level)
-        self.level_combo.setMinimumWidth(110)
+        self.level_combo.addItem("E - error", "E")
+        self.level_combo.addItem("W - warning", "W")
+        self.level_combo.addItem("I - info", "I")
+        self.level_combo.addItem("D - debug", "D")
+        self.level_combo.addItem("V - verbose", "V")
+        self.level_combo.setMinimumWidth(120)
         toolbar.addWidget(self.level_combo)
 
         self.feature_edit = QLineEdit()
         self.feature_edit.setPlaceholderText("Feature")
-        self.feature_edit.setMinimumWidth(160)
+        self.feature_edit.setMinimumWidth(140)
         toolbar.addWidget(self.feature_edit)
 
         self.device_combo = QComboBox()
         self.device_combo.addItem("All Devices", "")
-        self.device_combo.setMinimumWidth(250)
+        self.device_combo.setMinimumWidth(220)
         toolbar.addWidget(self.device_combo)
 
         self.show_source_check = QCheckBox("Show Source")
@@ -363,26 +451,30 @@ class UdpLogGui(QMainWindow):
         self.auto_scroll_check.setChecked(True)
         toolbar.addWidget(self.auto_scroll_check)
 
-        self.source_label = QLabel("Latest source: -")
-        toolbar.addWidget(self.source_label)
-
-        self.count_label = QLabel("Lines: 0")
-        self.count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        toolbar.addWidget(self.count_label)
-
+        # -- Log view -------------------------------------------------------
         self.text = QPlainTextEdit()
         self.text.setReadOnly(True)
+        self.text.setMaximumBlockCount(MAX_DISPLAY_LOG_LINES)
         root.addWidget(self.text, 1)
 
+        # -- Status bar -----------------------------------------------------
+        self.source_label = QLabel("Latest source: -")
+        self.statusBar().addWidget(self.source_label)
+        self.session_label = QLabel(f"Session file: {self.journal.path}")
+        self.statusBar().addPermanentWidget(self.session_label)
+
+        self._update_stats()
+
     def _connect_signals(self) -> None:
-        self.start_button.clicked.connect(self.start_receiver)
-        self.stop_button.clicked.connect(self.stop_receiver)
+        self.start_stop_button.clicked.connect(self.toggle_receiver)
+        self.pause_button.toggled.connect(self._on_pause_toggled)
         self.save_button.clicked.connect(self.save_logs)
         self.clear_button.clicked.connect(self.clear_logs)
         self.refresh_button.clicked.connect(self.refresh_network_info)
         self.use_detected_button.clicked.connect(self.use_detected_target)
         self.use_default_button.clicked.connect(self.use_project_default_target)
         self.copy_target_button.clicked.connect(self.copy_device_target)
+        self.settings_toggle.toggled.connect(self._on_settings_toggled)
         self.filter_edit.textChanged.connect(self.render)
         self.feature_edit.textChanged.connect(self.render)
         self.level_combo.currentIndexChanged.connect(self.render)
@@ -390,6 +482,9 @@ class UdpLogGui(QMainWindow):
         self.device_combo.currentIndexChanged.connect(self.render)
         self.show_source_check.stateChanged.connect(self.render)
 
+    # ------------------------------------------------------------------
+    # Config persistence
+    # ------------------------------------------------------------------
     def _load_config(self) -> None:
         if not self.config_path.exists():
             return
@@ -426,9 +521,17 @@ class UdpLogGui(QMainWindow):
         except OSError:
             pass
 
+    # ------------------------------------------------------------------
+    # Receiver control
+    # ------------------------------------------------------------------
+    def toggle_receiver(self) -> None:
+        if self.running:
+            self.stop_receiver()
+        else:
+            self.start_receiver()
+
     def start_receiver(self) -> None:
         if self.running:
-            QMessageBox.information(self, "Already Running", "The UDP receiver is already running.")
             return
 
         host = self.udp_host_edit.text().strip() or "0.0.0.0"
@@ -450,20 +553,63 @@ class UdpLogGui(QMainWindow):
             return
 
         self.running = True
-        self.status_label.setText(f"Listening on udp://{host}:{port}")
+        self._set_status("listening", f"Listening on udp://{host}:{port}")
+        self._set_start_button_running(True)
+        self.settings_toggle.setChecked(False)
         self._save_config()
 
     def stop_receiver(self) -> None:
         if self.receiver is not None:
             self.receiver.stop()
             self.receiver = None
+        was_running = self.running
         self.running = False
-        self.status_label.setText("Stopped")
+        self._set_start_button_running(False)
+        if was_running:
+            self._set_status("stopped", "Stopped")
+            self.settings_toggle.setChecked(True)
 
+    def _set_start_button_running(self, running: bool) -> None:
+        self.start_stop_button.setText("■  Stop" if running else "▶  Start")
+        self.start_stop_button.setProperty("running", "true" if running else "false")
+        style = self.start_stop_button.style()
+        style.unpolish(self.start_stop_button)
+        style.polish(self.start_stop_button)
+
+    def _on_pause_toggled(self, paused: bool) -> None:
+        self.paused = paused
+        self.pause_button.setText("▶  Resume View" if paused else "⏸  Pause View")
+        if paused:
+            if self.running:
+                self._set_status("paused", "View paused - still receiving and journaling")
+        else:
+            self.render()
+            if self.running:
+                host = self.udp_host_edit.text().strip() or "0.0.0.0"
+                port = self.udp_port_edit.text().strip()
+                self._set_status("listening", f"Listening on udp://{host}:{port}")
+
+    def _on_settings_toggled(self, expanded: bool) -> None:
+        self.settings_card.setVisible(expanded)
+        self.settings_toggle.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+
+    def _set_status(self, kind: str, message: str) -> None:
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet(
+            f"{STATUS_STYLES.get(kind, STATUS_STYLES['idle'])} "
+            "border-radius: 10px; padding: 4px 12px; font-weight: 600; font-size: 12px;"
+        )
+
+    # ------------------------------------------------------------------
+    # Log intake and rendering
+    # ------------------------------------------------------------------
     def clear_logs(self) -> None:
         self.records.clear()
         self.devices.clear()
         self.sequence_tracker = UdpLogSequenceTracker()
+        self.error_count = 0
+        self.warning_count = 0
+        self.gap_count = 0
         self._refresh_device_combo()
         self.render()
 
@@ -499,14 +645,6 @@ class UdpLogGui(QMainWindow):
 
     def refresh_network_info(self) -> None:
         preferred_ip, ips = detect_local_ipv4s()
-        if ips:
-            self.local_ips_label.setText(f"Local IPv4: {', '.join(ips)}")
-        else:
-            self.local_ips_label.setText("Local IPv4: not detected")
-
-        display_ip = preferred_ip if preferred_ip else "-"
-        self.preferred_ip_label.setText(f"Preferred IP: {display_ip}")
-
         port_text = self.udp_port_edit.text().strip()
         try:
             port = int(port_text)
@@ -515,13 +653,14 @@ class UdpLogGui(QMainWindow):
 
         if preferred_ip and port is not None:
             self.detected_target_value = f"{preferred_ip}:{port}"
-            self.detected_target_label.setText(f"Detected PC target: {self.detected_target_value}")
-        elif preferred_ip:
-            self.detected_target_value = ""
-            self.detected_target_label.setText(f"Detected PC target: {preferred_ip}:<invalid-port>")
         else:
             self.detected_target_value = ""
-            self.detected_target_label.setText("Detected PC target: unavailable")
+
+        parts = []
+        parts.append(f"Local IPv4: {', '.join(ips) if ips else 'not detected'}")
+        if self.detected_target_value:
+            parts.append(f"Detected PC target: {self.detected_target_value}")
+        self.network_info_label.setText("    ".join(parts))
 
     def use_detected_target(self) -> None:
         if not self.detected_target_value:
@@ -544,7 +683,7 @@ class UdpLogGui(QMainWindow):
         QMessageBox.information(self, "Copied", f"Copied device target:\n{value}")
 
     def _drain_queue(self) -> None:
-        updated = False
+        appended: list[UdpLogRecord] = []
         while True:
             try:
                 line, source = self.line_queue.get_nowait()
@@ -552,24 +691,44 @@ class UdpLogGui(QMainWindow):
                 break
             record = parse_udp_log_line(line, source)
             self.records.append(record)
+            appended.append(record)
             self.journal.append(self._format_record(record, include_source=True))
             self.jsonl_journal.append(format_udp_log_record_jsonl(record))
+            if record.level == "E":
+                self.error_count += 1
+            elif record.level == "W":
+                self.warning_count += 1
             gap = self.sequence_tracker.observe(record)
             if gap is not None:
                 gap_record = parse_udp_log_line(gap.to_line(), "local")
                 self.records.append(gap_record)
+                appended.append(gap_record)
                 self.journal.append(gap_record.text)
                 self.jsonl_journal.append(format_udp_log_record_jsonl(gap_record))
+                self.gap_count += 1
             if record.imei != "-":
                 self.devices[record.imei] = source
                 self._refresh_device_combo()
-            if len(self.records) > MAX_DISPLAY_LOG_LINES:
-                self.records = self.records[-MAX_DISPLAY_LOG_LINES:]
             self.source_label.setText(f"Latest source: {source}")
-            updated = True
 
-        if updated:
-            self.render()
+        if not appended:
+            return
+
+        if len(self.records) > MAX_DISPLAY_LOG_LINES:
+            self.records = self.records[-MAX_DISPLAY_LOG_LINES:]
+
+        if not self.paused:
+            include_source = self.show_source_check.isChecked()
+            shown = 0
+            for record in appended:
+                if self._record_passes_filters(record):
+                    self.text.appendHtml(self._record_to_html(record, include_source))
+                    shown += 1
+            if shown:
+                self.shown_count += shown
+                if self.auto_scroll_check.isChecked():
+                    self.text.moveCursor(QTextCursor.End)
+        self._update_stats()
 
     def _refresh_device_combo(self) -> None:
         current_imei = self.device_combo.currentData() or ""
@@ -590,38 +749,58 @@ class UdpLogGui(QMainWindow):
     def _format_record(self, record: UdpLogRecord, include_source: bool) -> str:
         return format_udp_log_record(record, include_source=include_source)
 
-    def render(self) -> None:
-        keyword = self.filter_edit.text().strip().lower()
-        feature_keyword = self.feature_edit.text().strip().lower()
-        selected_level = str(self.level_combo.currentData() or "")
+    def _record_passes_filters(self, record: UdpLogRecord) -> bool:
         selected_imei = self._selected_device_imei()
-        display_records = self.records
-        if selected_imei:
-            display_records = [record for record in display_records if record.imei == selected_imei]
-        if selected_level:
-            display_records = [record for record in display_records if record.level == selected_level]
-        if feature_keyword:
-            display_records = [
-                record for record in display_records
-                if feature_keyword in record.feature.lower()
-            ]
-        if keyword:
-            display_records = [
-                record for record in display_records
-                if keyword in record.text.lower()
-                or keyword in record.source.lower()
-                or keyword in record.imei.lower()
-                or keyword in record.feature.lower()
-                or keyword in record.script.lower()
-            ]
+        if selected_imei and record.imei != selected_imei:
+            return False
+        selected_level = str(self.level_combo.currentData() or "")
+        if selected_level and record.level != selected_level:
+            return False
+        feature_keyword = self.feature_edit.text().strip().lower()
+        if feature_keyword and feature_keyword not in record.feature.lower():
+            return False
+        keyword = self.filter_edit.text().strip().lower()
+        if keyword and not (
+            keyword in record.text.lower()
+            or keyword in record.source.lower()
+            or keyword in record.imei.lower()
+            or keyword in record.feature.lower()
+            or keyword in record.script.lower()
+        ):
+            return False
+        return True
 
+    def _record_to_html(self, record: UdpLogRecord, include_source: bool) -> str:
+        line = self._format_record(record, include_source).rstrip("\n")
+        escaped = html.escape(line)
+        if record.feature == "udp.seq":
+            return f'<span style="color: {GAP_COLOR}; font-style: italic;">{escaped}</span>'
+        color = LEVEL_COLORS.get(record.level, LEVEL_COLORS["I"])
+        weight = " font-weight: 700;" if record.level == "E" else ""
+        return f'<span style="color: {color};{weight}">{escaped}</span>'
+
+    def render(self) -> None:
         include_source = self.show_source_check.isChecked()
-        self.text.setPlainText(
-            "".join(self._format_record(record, include_source) for record in display_records)
-        )
-        self.count_label.setText(f"Lines: {len(display_records)}")
+        display_records = [r for r in self.records if self._record_passes_filters(r)]
+
+        self.text.setUpdatesEnabled(False)
+        self.text.clear()
+        for record in display_records:
+            self.text.appendHtml(self._record_to_html(record, include_source))
+        self.text.setUpdatesEnabled(True)
+
+        self.shown_count = len(display_records)
         if self.auto_scroll_check.isChecked():
             self.text.moveCursor(QTextCursor.End)
+        self._update_stats()
+
+    def _update_stats(self) -> None:
+        self.stats_label.setText(
+            f"Shown {self.shown_count} / Buffered {len(self.records)}"
+            f'    <span style="color: {LEVEL_COLORS["E"]};">E {self.error_count}</span>'
+            f'    <span style="color: {LEVEL_COLORS["W"]};">W {self.warning_count}</span>'
+            f'    <span style="color: {GAP_COLOR};">Gaps {self.gap_count}</span>'
+        )
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._save_config()
