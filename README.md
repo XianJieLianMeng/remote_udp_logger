@@ -5,6 +5,11 @@
 - `components/remote_udp_logger`：ESP-IDF 组件，用于把 `ESP_LOGx` 输出镜像发送到 UDP。
 - `host_tool`：Windows 桌面查看器，用于接收 UDP 日志，显示来源 `IP:端口`，按设备 ID / IMEI、级别和 feature 过滤日志，并导出本次会话日志。
 
+> `host_tool` 里的 `udp_log_*.py` 是从仓库 `scripts/` 目录同步生成的副本，
+> 唯一事实源在 `scripts/`。修改后运行 `python host_tool\sync_from_scripts.py`
+> 同步；`build_windows_package.bat` 打包前会自动执行同步。
+> CI/评审可用 `python host_tool\sync_from_scripts.py --check` 检查漂移。
+
 默认 UDP 目标：
 
 ```text

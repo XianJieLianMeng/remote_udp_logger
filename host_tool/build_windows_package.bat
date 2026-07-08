@@ -3,6 +3,13 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
+rem host_tool files are generated copies; refresh from <repo>/scripts when available.
+python sync_from_scripts.py
+if errorlevel 1 (
+  echo Failed to sync host tools from scripts directory.
+  exit /b 1
+)
+
 set PACKAGE_DIR=dist\XbellUdpLogViewer_package
 set PACKAGE_ZIP=dist\XbellUdpLogViewer_package.zip
 set APP_DIR=dist\XbellUdpLogViewer

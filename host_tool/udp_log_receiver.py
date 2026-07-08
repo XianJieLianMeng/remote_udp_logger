@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse
-import socket
 import sys
+
+from udp_log_env import bind_udp_socket, ensure_supported_python
+
+ensure_supported_python("udp_log_receiver")
 
 from udp_log_journal import UdpLogJournal
 from udp_log_record import (
@@ -23,9 +26,7 @@ def main() -> int:
     parser.add_argument("--jsonl", action="store_true", help="Print parsed records as JSON Lines")
     args = parser.parse_args()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((args.host, args.port))
+    sock = bind_udp_socket(args.host, args.port, "udp_log_receiver")
     journal = UdpLogJournal("udp_cli_session")
     sequence_tracker = UdpLogSequenceTracker()
 

@@ -7,7 +7,18 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
+from udp_log_env import ensure_supported_python
+
+ensure_supported_python("udp_log_gui")
+
+try:
+    from PySide6.QtCore import QTimer, Qt
+except ImportError:
+    raise SystemExit(
+        "udp_log_gui requires PySide6. Install it with:\n"
+        "  python -m pip install -r requirements.txt\n"
+        "or use the prebuilt XbellUdpLogViewer package (no Python needed)."
+    )
 from PySide6.QtGui import QIntValidator, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
