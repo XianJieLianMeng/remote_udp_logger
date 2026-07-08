@@ -655,7 +655,10 @@ def make_handler(log_hub: LogHub, udp_target: str):
                     message = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
                     self.wfile.write(message)
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except OSError:
+                # Browser closed/refreshed the SSE connection (on Windows this
+                # raises ConnectionAbortedError, WinError 10053). Normal churn,
+                # not an error worth a traceback.
                 pass
             finally:
                 log_hub.unsubscribe(subscriber)
