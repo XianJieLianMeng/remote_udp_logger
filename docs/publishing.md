@@ -11,7 +11,7 @@ plugins/remote_udp_logger/components/remote_udp_logger
 桌面工具 `host_tool` 不作为 IDF component 上传。建议放在 GitHub Release 里，例如：
 
 ```text
-XbellUdpLogViewer_package.zip
+UdpLogViewer_package.zip
 ```
 
 ## 2. 发布前必须确认

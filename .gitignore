@@ -2,7 +2,7 @@ host_tool/build/
 host_tool/dist/
 host_tool/__pycache__/
 host_tool/udp_log_gui_config.json
-host_tool/XbellUdpLogViewer.spec
+host_tool/UdpLogViewer.spec
 components/remote_udp_logger/examples/**/build/
 components/remote_udp_logger/examples/**/sdkconfig
 components/remote_udp_logger/examples/**/sdkconfig.old
