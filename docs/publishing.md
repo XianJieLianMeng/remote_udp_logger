@@ -14,24 +14,11 @@ plugins/remote_udp_logger/components/remote_udp_logger
 XbellUdpLogViewer_package.zip
 ```
 
-## 2. 发布前必须修改
+## 2. 发布前必须确认
 
-编辑：
-
-```text
-components/remote_udp_logger/idf_component.yml
-```
-
-把下面这些字段从注释改成真实值：
-
-```yaml
-maintainers:
-  - Your Name <you@example.com>
-url: "https://github.com/your-org/remote_udp_logger"
-repository: "https://github.com/your-org/remote_udp_logger.git"
-documentation: "https://github.com/your-org/remote_udp_logger#readme"
-issues: "https://github.com/your-org/remote_udp_logger/issues"
-```
+`components/remote_udp_logger/idf_component.yml` 的 `maintainers/url/repository/
+documentation/issues` 字段已填写（当前指向 `github.com/x-bell/remote_udp_logger`）。
+上传前确认该仓库真实存在且公开，否则先改成实际的托管地址。
 
 同时确认：
 
@@ -40,9 +27,15 @@ version: "0.1.0"
 license: "MIT"
 dependencies:
   idf: ">=5.0"
+examples:
+  - path: "examples/basic"
 ```
 
-版本号发布后不要重复上传同一个版本。如果改代码，需要升级版本，例如 `0.1.1` 或 `0.2.0`。
+每次发布：
+
+1. 升级 `version`（发布过的版本号不能重复上传），
+2. 在 `CHANGELOG.md` 增加对应版本条目，
+3. 运行 `python host_tool\sync_from_scripts.py --check` 确认桌面工具没有漂移。
 
 ## 3. 本地打包校验
 
@@ -117,10 +110,12 @@ RemoteUdpLogger::Initialize();
 
 ## 8. 发布检查清单
 
-- `components/remote_udp_logger/idf_component.yml` 信息真实。
+- `components/remote_udp_logger/idf_component.yml` 信息真实（url/repository 指向真实公开仓库）。
 - `components/remote_udp_logger/LICENSE` 存在。
-- `components/remote_udp_logger/README.md` 能独立说明用法。
-- `components/remote_udp_logger/examples/basic` 能编译。
-- `compote component pack` 成功。
+- `components/remote_udp_logger/README.md`（英文）与 `README_CN.md` 能独立说明用法。
+- `components/remote_udp_logger/CHANGELOG.md` 包含本次版本条目。
+- `components/remote_udp_logger/examples/basic` 能独立编译（`idf.py -C ... set-target esp32s3 build`）。
+- `compote component pack` 成功（同时生成组件包与 examples 包）。
+- `python host_tool\sync_from_scripts.py --check` 通过（桌面工具与 scripts/ 一致）。
 - GitHub Release 已附带桌面工具包。
 - Windows 桌面工具如果对外给客户使用，建议做代码签名。
