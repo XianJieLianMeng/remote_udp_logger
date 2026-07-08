@@ -3,10 +3,10 @@ description: "Mirror ESP-IDF logs to UDP and prefix log lines with a device id f
 license: "MIT"
 maintainers:
   - "Li Ruirui <liruirui@x-bell.com>"
-url: "https://github.com/x-bell/remote_udp_logger"
-repository: "https://github.com/x-bell/remote_udp_logger.git"
-documentation: "https://github.com/x-bell/remote_udp_logger#readme"
-issues: "https://github.com/x-bell/remote_udp_logger/issues"
+url: "https://github.com/XianJieLianMeng/remote_udp_logger"
+repository: "https://github.com/XianJieLianMeng/remote_udp_logger.git"
+documentation: "https://github.com/XianJieLianMeng/remote_udp_logger#readme"
+issues: "https://github.com/XianJieLianMeng/remote_udp_logger/issues"
 tags:
   - logging
   - udp

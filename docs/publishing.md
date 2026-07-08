@@ -17,7 +17,7 @@ XbellUdpLogViewer_package.zip
 ## 2. 发布前必须确认
 
 `components/remote_udp_logger/idf_component.yml` 的 `maintainers/url/repository/
-documentation/issues` 字段已填写（当前指向 `github.com/x-bell/remote_udp_logger`）。
+documentation/issues` 字段已填写（指向 `github.com/XianJieLianMeng/remote_udp_logger`）。
 上传前确认该仓库真实存在且公开，否则先改成实际的托管地址。
 
 同时确认：
@@ -73,19 +73,20 @@ python -m pip install idf-component-manager
 ```powershell
 compote component upload `
   --project-dir plugins\remote_udp_logger\components\remote_udp_logger `
-  --namespace your_namespace `
+  --namespace xianjielianmeng `
   --name remote_udp_logger `
   --dry-run
 ```
 
-`your_namespace` 要换成你们在 ESP Component Registry 上的 namespace。
+namespace 为用 GitHub 组织 `XianJieLianMeng` 登录注册表后的默认小写形式
+`xianjielianmeng`；如实际分配的 namespace 不同，以注册表页面显示为准。
 
 ## 6. 正式发布
 
 ```powershell
 compote component upload `
   --project-dir plugins\remote_udp_logger\components\remote_udp_logger `
-  --namespace your_namespace `
+  --namespace xianjielianmeng `
   --name remote_udp_logger
 ```
 
@@ -96,7 +97,7 @@ compote component upload `
 发布后，其他 ESP-IDF 项目可以执行：
 
 ```powershell
-idf.py add-dependency "your_namespace/remote_udp_logger^0.1.0"
+idf.py add-dependency "xianjielianmeng/remote_udp_logger^0.1.1"
 ```
 
 然后在代码里：

@@ -36,7 +36,7 @@ device id / level / feature, and warns when the sequence number jumps
 Add the dependency to your project:
 
 ```shell
-idf.py add-dependency "x-bell/remote_udp_logger"
+idf.py add-dependency "xianjielianmeng/remote_udp_logger"
 ```
 
 Enable it in `menuconfig` (or `sdkconfig.defaults`):

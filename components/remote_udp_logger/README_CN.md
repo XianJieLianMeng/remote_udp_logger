@@ -31,7 +31,7 @@ UDP 序号跳变时提示可能丢包。
 添加依赖：
 
 ```shell
-idf.py add-dependency "x-bell/remote_udp_logger"
+idf.py add-dependency "xianjielianmeng/remote_udp_logger"
 ```
 
 打开组件配置：
