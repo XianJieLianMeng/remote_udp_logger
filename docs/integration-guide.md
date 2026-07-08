@@ -227,15 +227,15 @@ build_windows_package.bat
 生成：
 
 ```text
-host_tool/dist/XbellUdpLogViewer_package.zip
+host_tool/dist/UdpLogViewer_package.zip
 ```
 
 发给别人时推荐发这个 zip。
 
-对方解压后双击：
+对方解压后直接双击：
 
 ```text
-Start_XbellUdpLogViewer.bat
+UdpLogViewer.exe
 ```
 
 ### 4.3 Windows 拦截处理
@@ -244,17 +244,17 @@ Start_XbellUdpLogViewer.bat
 
 临时处理：
 
-1. 右键 `XbellUdpLogViewer_package.zip`
+1. 右键 `UdpLogViewer_package.zip`
 2. 选择 `属性`
 3. 如果看到 `解除锁定` / `Unblock`，勾选它
 4. 重新解压
-5. 双击 `Start_XbellUdpLogViewer.bat`
+5. 双击 `UdpLogViewer.exe`
 
 长期对外分发建议：
 
 - 用公司代码签名证书签名
 - 或购买 OV/EV Code Signing 证书
-- 打包后用 `signtool` 对 `XbellUdpLogViewer.exe` 签名
+- 打包后用 `signtool` 对 `UdpLogViewer.exe` 签名
 
 ---
 
@@ -279,7 +279,7 @@ Start_XbellUdpLogViewer.bat
 桌面工具收到日志后会立即写入本机会话文件，默认目录：
 
 ```text
-~/XbellUdpLogs/
+~/RemoteUdpLogs/
 ```
 
 界面显示区为了性能只保留最近一段日志；`Export Logs` 导出的是完整会话文件，不是只导出当前界面可见行。

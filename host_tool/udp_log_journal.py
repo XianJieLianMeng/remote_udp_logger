@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 
-DEFAULT_LOG_DIR_NAME = "XbellUdpLogs"
+DEFAULT_LOG_DIR_NAME = "RemoteUdpLogs"
 DEFAULT_KEEP_SESSION_FILES = 100
 KEEP_FILES_ENV_VAR = "XBELL_UDP_LOG_KEEP_FILES"
 _SESSION_FILE_PATTERN = re.compile(r"^[A-Za-z0-9_]+_\d{8}_\d{6}_\d{6}\.(log|jsonl)$")

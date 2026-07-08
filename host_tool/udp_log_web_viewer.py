@@ -25,7 +25,7 @@ HTML_PAGE = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Xbell Wireless Log Viewer</title>
+  <title>Remote UDP Log Viewer</title>
   <style>
     :root {
       --bg: #0b1020;

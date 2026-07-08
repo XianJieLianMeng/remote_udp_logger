@@ -18,7 +18,7 @@ except ImportError:
     raise SystemExit(
         "udp_log_gui requires PySide6. Install it with:\n"
         "  python -m pip install -r requirements.txt\n"
-        "or use the prebuilt XbellUdpLogViewer package (no Python needed)."
+        "or use the prebuilt UdpLogViewer package (no Python needed)."
     )
 from PySide6.QtGui import QIntValidator, QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
@@ -82,7 +82,7 @@ STATUS_STYLES = {
 # translatable; do not hard-code labels inside widget-building code.
 TEXTS = {
     "zh": {
-        "app_title": "Xbell 无线日志查看器",
+        "app_title": "无线日志查看器",
         "status_idle": "空闲 · 配置接收参数后点击开始",
         "status_listening": "正在监听 udp://{url}",
         "status_paused": "已暂停显示 · 仍在接收与落盘",
@@ -142,7 +142,7 @@ TEXTS = {
         "no_errors_above": "光标上方没有错误行",
     },
     "en": {
-        "app_title": "Xbell Wireless Log Viewer",
+        "app_title": "Remote UDP Log Viewer",
         "status_idle": "Idle · configure the receiver, then press Start",
         "status_listening": "Listening on udp://{url}",
         "status_paused": "View paused · still receiving and journaling",
