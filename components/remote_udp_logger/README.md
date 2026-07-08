@@ -20,12 +20,16 @@ device id / level / feature, and warns when the sequence number jumps
 
 - Mirrors `ESP_LOGI` / `ESP_LOGW` / `ESP_LOGE` (and all other levels) to UDP.
 - Leaves the local serial console output untouched.
-- LAN broadcast target supported, e.g. `255.255.255.255:8001` — the host tool
-  needs no pairing or fixed IP.
+- LAN broadcast target supported: limited broadcast `255.255.255.255:8001` or
+  subnet-directed broadcast such as `192.168.1.255:8001` — the host tool needs
+  no pairing or fixed IP.
 - Unicast to a specific PC supported, e.g. `192.168.1.23:8001`.
 - Optional `[imei=<id> seq=<n>]` prefix for multi-device debugging and packet
   loss detection.
 - Runtime overrides before `Initialize()`: `SetDeviceId()` and `SetTarget()`.
+- Send-failure diagnostics: failures are counted, reported to the local
+  console once per 100 occurrences, and queryable via
+  `RemoteUdpLogger::GetSendFailureCount()`.
 
 ## Getting started
 

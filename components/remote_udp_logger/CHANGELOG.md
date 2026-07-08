@@ -3,6 +3,13 @@
 All notable changes to the `remote_udp_logger` component are documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-07-08
+
+- Enable `SO_BROADCAST` for subnet-directed broadcast targets such as
+  `192.168.1.255` (previously only the literal `255.255.255.255` worked).
+- Count UDP send failures and report them on the local console once per 100
+  failures; new `RemoteUdpLogger::GetSendFailureCount()` diagnostic API.
+
 ## [0.1.0] - 2026-07-08
 
 Initial release.

@@ -7,6 +7,7 @@
 #if CONFIG_REMOTE_UDP_LOGGER_ENABLE
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdlib>
@@ -58,6 +59,10 @@ public:
         return initialized_;
     }
 
+    static uint32_t GetSendFailureCount() {
+        return send_failure_count_;
+    }
+
 private:
     static int RemoteVprintf(const char* fmt, va_list args) {
         va_list console_args;
@@ -102,8 +107,18 @@ private:
         const char* send_buffer = line_buffer;
 #endif
 
-        sendto(udp_sockfd_, send_buffer, send_len, 0, reinterpret_cast<const struct sockaddr*>(&target_addr_),
-               sizeof(target_addr_));
+        const ssize_t sent = sendto(udp_sockfd_, send_buffer, send_len, 0,
+                                    reinterpret_cast<const struct sockaddr*>(&target_addr_),
+                                    sizeof(target_addr_));
+        if (sent < 0) {
+            ++send_failure_count_;
+            // Plain printf: going through ESP_LOG here would recurse back into
+            // this vprintf hook.
+            if (send_failure_count_ == 1 || send_failure_count_ % 100 == 0) {
+                printf("W %s: UDP log send failed %lu times, last errno=%d\n", kTag,
+                       static_cast<unsigned long>(send_failure_count_), errno);
+            }
+        }
         return ret;
     }
 
@@ -157,7 +172,11 @@ private:
             return;
         }
 
-        if (ip == "255.255.255.255") {
+        // Allow both the limited broadcast (255.255.255.255) and
+        // subnet-directed broadcasts such as 192.168.1.255. SO_BROADCAST only
+        // grants permission to send broadcast; it is harmless for a unicast
+        // host address that merely ends in .255.
+        if ((ntohl(target_addr_.sin_addr.s_addr) & 0xFF) == 0xFF) {
             const int enable_broadcast = 1;
             setsockopt(udp_sockfd_, SOL_SOCKET, SO_BROADCAST, &enable_broadcast, sizeof(enable_broadcast));
         }
@@ -173,6 +192,7 @@ private:
     inline static std::string device_id_;
     inline static std::string target_override_;
     inline static uint32_t next_sequence_ = 1;
+    inline static uint32_t send_failure_count_ = 0;
 };
 
 }  // namespace
@@ -206,5 +226,13 @@ bool RemoteUdpLogger::IsInitialized() {
     return RemoteUdpLoggerImpl::IsInitialized();
 #else
     return false;
+#endif
+}
+
+uint32_t RemoteUdpLogger::GetSendFailureCount() {
+#if CONFIG_REMOTE_UDP_LOGGER_ENABLE
+    return RemoteUdpLoggerImpl::GetSendFailureCount();
+#else
+    return 0;
 #endif
 }

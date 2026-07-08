@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 class RemoteUdpLogger {
@@ -14,4 +15,9 @@ public:
     static void Initialize();
 
     static bool IsInitialized();
+
+    // Number of UDP send failures since boot. UDP is fire-and-forget, so this
+    // is the only signal that the target is unreachable (also reported to the
+    // local console once per 100 failures).
+    static uint32_t GetSendFailureCount();
 };
