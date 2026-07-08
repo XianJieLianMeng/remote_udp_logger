@@ -2,17 +2,61 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
+import re
 import threading
 from pathlib import Path
 
 
 DEFAULT_LOG_DIR_NAME = "XbellUdpLogs"
+DEFAULT_KEEP_SESSION_FILES = 100
+KEEP_FILES_ENV_VAR = "XBELL_UDP_LOG_KEEP_FILES"
+_SESSION_FILE_PATTERN = re.compile(r"^[A-Za-z0-9_]+_\d{8}_\d{6}_\d{6}\.(log|jsonl)$")
 
 
 def get_default_log_dir() -> Path:
     log_dir = Path.home() / DEFAULT_LOG_DIR_NAME
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
+
+
+def prune_old_session_files(directory: Path | None = None, keep_files: int | None = None) -> int:
+    """Delete the oldest session files beyond the retention limit.
+
+    Only files matching this module's timestamped session naming pattern are
+    considered, so user files in the log directory are never touched. Set the
+    XBELL_UDP_LOG_KEEP_FILES environment variable to change the limit, or to
+    0 (or a negative number) to disable pruning entirely.
+    """
+    base_dir = directory or get_default_log_dir()
+    if keep_files is None:
+        try:
+            keep_files = int(os.environ.get(KEEP_FILES_ENV_VAR, DEFAULT_KEEP_SESSION_FILES))
+        except ValueError:
+            keep_files = DEFAULT_KEEP_SESSION_FILES
+    if keep_files <= 0:
+        return 0
+
+    try:
+        candidates = sorted(
+            (
+                path
+                for path in base_dir.iterdir()
+                if path.is_file() and _SESSION_FILE_PATTERN.match(path.name)
+            ),
+            key=lambda path: path.stat().st_mtime,
+        )
+    except OSError:
+        return 0
+
+    removed = 0
+    for path in candidates[: max(0, len(candidates) - keep_files)]:
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def build_session_log_path(
@@ -30,6 +74,7 @@ class UdpLogJournal:
     def __init__(self, prefix: str, directory: Path | None = None, suffix: str = ".log") -> None:
         self._lock = threading.Lock()
         self._fallback_lines: list[str] = []
+        prune_old_session_files(directory)
         self._path = build_session_log_path(prefix, directory, suffix)
         self._handle = None
         try:

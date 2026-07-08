@@ -156,8 +156,21 @@ HTML_PAGE = """<!doctype html>
       min-height: 65vh;
       max-height: 65vh;
       overflow: auto;
-      white-space: pre-wrap;
       word-break: break-word;
+    }
+    #log .line { white-space: pre-wrap; }
+    #log .lv-E { color: #ff7676; font-weight: 700; }
+    #log .lv-W { color: #ffc46b; }
+    #log .lv-I { color: var(--text); }
+    #log .lv-D { color: #9fb3dd; }
+    #log .lv-V { color: #7f92bf; }
+    #log .lv-gap { color: #c792ea; font-style: italic; }
+    .count-e { color: #ff7676; font-weight: 700; }
+    .count-w { color: #ffc46b; font-weight: 700; }
+    .count-gap { color: #c792ea; font-weight: 700; }
+    .toolbar button.paused {
+      background: linear-gradient(135deg, #ffd27d, #ffb45c);
+      color: #241a05;
     }
     .hint {
       color: var(--muted);
@@ -188,6 +201,15 @@ HTML_PAGE = """<!doctype html>
         <div class="status-row"><span class="label">UDP 监听</span><span class="value" id="udpTarget">-</span></div>
         <div class="status-row"><span class="label">页面状态</span><span class="value"><span class="dot" id="dot"></span><span id="connText">连接中</span></span></div>
         <div class="status-row"><span class="label">最近来源</span><span class="value" id="source">-</span></div>
+        <div class="status-row"><span class="label">显示 / 缓存</span><span class="value" id="lineStats">0 / 0</span></div>
+        <div class="status-row">
+          <span class="label">计数</span>
+          <span class="value">
+            <span class="count-e">E <span id="errCount">0</span></span>
+            &nbsp;<span class="count-w">W <span id="warnCount">0</span></span>
+            &nbsp;<span class="count-gap">丢包 <span id="gapCount">0</span></span>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -202,10 +224,11 @@ HTML_PAGE = """<!doctype html>
         <option value="V">V</option>
       </select>
       <input id="featureFilter" type="text" placeholder="feature，例如 device_msg.eval">
+      <button id="pauseBtn">暂停显示</button>
+      <button id="toggleBtn" class="secondary">暂停自动滚动</button>
       <button id="clearBtn" class="secondary">清空页面</button>
       <button id="exportBtn" class="secondary">导出日志</button>
       <button id="exportJsonBtn" class="secondary">导出 JSONL</button>
-      <button id="toggleBtn">暂停自动滚动</button>
     </div>
 
     <div class="log-panel">
@@ -213,7 +236,7 @@ HTML_PAGE = """<!doctype html>
         <div>实时日志</div>
         <div class="hint">如果这里一直没内容，先确认设备和电脑在同一局域网，并且设备已经连上 Wi-Fi。</div>
       </div>
-      <pre id="log"></pre>
+      <div id="log"></div>
     </div>
   </div>
 
@@ -231,29 +254,97 @@ HTML_PAGE = """<!doctype html>
     const exportJsonBtn = document.getElementById("exportJsonBtn");
     const toggleBtn = document.getElementById("toggleBtn");
 
+    const pauseBtn = document.getElementById("pauseBtn");
+    const lineStatsEl = document.getElementById("lineStats");
+    const errCountEl = document.getElementById("errCount");
+    const warnCountEl = document.getElementById("warnCount");
+    const gapCountEl = document.getElementById("gapCount");
+
+    const MAX_LINES = 2000;
     const state = {
       lines: [],
       autoScroll: true,
+      paused: false,
       udpTarget: "",
+      shown: 0,
+      errors: 0,
+      warnings: 0,
+      gaps: 0,
     };
 
-    function render() {
+    function isGap(record) {
+      return (record.feature || "") === "udp.seq";
+    }
+
+    function escapeHtml(value) {
+      return (value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function levelClass(record) {
+      if (isGap(record)) return "lv-gap";
+      const level = record.level || "I";
+      return "EWIDV".includes(level) ? "lv-" + level : "lv-I";
+    }
+
+    function lineHtml(record) {
+      return '<div class="line ' + levelClass(record) + '">'
+        + escapeHtml((record.line || "").trimEnd())
+        + "</div>";
+    }
+
+    function passesFilters(record) {
       const keyword = filterEl.value.trim().toLowerCase();
       const level = levelFilterEl.value;
       const feature = featureFilterEl.value.trim().toLowerCase();
-      const output = state.lines.filter((record) => {
-        if (level && record.level !== level) return false;
-        if (feature && !(record.feature || "").toLowerCase().includes(feature)) return false;
-        if (!keyword) return true;
-        return [
-          record.line,
-          record.source,
-          record.imei,
-          record.feature,
-          record.script,
-        ].some((value) => (value || "").toLowerCase().includes(keyword));
-      });
-      logEl.textContent = output.map((record) => record.line).join("");
+      if (level && record.level !== level) return false;
+      if (feature && !(record.feature || "").toLowerCase().includes(feature)) return false;
+      if (!keyword) return true;
+      return [
+        record.line,
+        record.source,
+        record.imei,
+        record.feature,
+        record.script,
+      ].some((value) => (value || "").toLowerCase().includes(keyword));
+    }
+
+    function countRecord(record) {
+      if (isGap(record)) { state.gaps += 1; return; }
+      if (record.level === "E") state.errors += 1;
+      else if (record.level === "W") state.warnings += 1;
+    }
+
+    function updateStats() {
+      lineStatsEl.textContent = state.shown + " / " + state.lines.length;
+      errCountEl.textContent = state.errors;
+      warnCountEl.textContent = state.warnings;
+      gapCountEl.textContent = state.gaps;
+    }
+
+    function render() {
+      const output = state.lines.filter(passesFilters);
+      logEl.innerHTML = output.map(lineHtml).join("");
+      state.shown = output.length;
+      updateStats();
+      if (state.autoScroll) {
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+
+    function appendRecord(record) {
+      if (!passesFilters(record)) {
+        updateStats();
+        return;
+      }
+      logEl.insertAdjacentHTML("beforeend", lineHtml(record));
+      while (logEl.childElementCount > MAX_LINES) {
+        logEl.firstElementChild.remove();
+      }
+      state.shown = Math.min(state.shown + 1, MAX_LINES);
+      updateStats();
       if (state.autoScroll) {
         logEl.scrollTop = logEl.scrollHeight;
       }
@@ -261,13 +352,19 @@ HTML_PAGE = """<!doctype html>
 
     function setConnected(connected) {
       dotEl.classList.toggle("connected", connected);
-      connTextEl.textContent = connected ? "已连接" : "连接中断";
+      connTextEl.textContent = state.paused
+        ? "已暂停（仍在接收与落盘）"
+        : connected ? "已连接" : "连接中断";
     }
 
     async function loadHistory() {
       const response = await fetch("/history");
       const data = await response.json();
       state.lines = data.records || [];
+      state.errors = 0;
+      state.warnings = 0;
+      state.gaps = 0;
+      state.lines.forEach(countRecord);
       state.udpTarget = data.udp_target || "";
       udpTargetEl.textContent = state.udpTarget || "-";
       render();
@@ -276,8 +373,20 @@ HTML_PAGE = """<!doctype html>
     filterEl.addEventListener("input", render);
     levelFilterEl.addEventListener("change", render);
     featureFilterEl.addEventListener("input", render);
+    pauseBtn.addEventListener("click", () => {
+      state.paused = !state.paused;
+      pauseBtn.textContent = state.paused ? "恢复显示" : "暂停显示";
+      pauseBtn.classList.toggle("paused", state.paused);
+      setConnected(dotEl.classList.contains("connected"));
+      if (!state.paused) {
+        render();
+      }
+    });
     clearBtn.addEventListener("click", () => {
       state.lines = [];
+      state.errors = 0;
+      state.warnings = 0;
+      state.gaps = 0;
       render();
     });
     exportBtn.addEventListener("click", async () => {
@@ -329,10 +438,15 @@ HTML_PAGE = """<!doctype html>
       }
       if (payload.line) {
         state.lines.push(payload);
-        if (state.lines.length > 2000) {
-          state.lines.splice(0, state.lines.length - 2000);
+        if (state.lines.length > MAX_LINES) {
+          state.lines.splice(0, state.lines.length - MAX_LINES);
         }
-        render();
+        countRecord(payload);
+        if (state.paused) {
+          updateStats();
+        } else {
+          appendRecord(payload);
+        }
       }
     };
   </script>

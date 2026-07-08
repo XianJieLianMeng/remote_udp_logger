@@ -20,7 +20,7 @@ except ImportError:
         "  python -m pip install -r requirements.txt\n"
         "or use the prebuilt XbellUdpLogViewer package (no Python needed)."
     )
-from PySide6.QtGui import QIntValidator, QTextCursor
+from PySide6.QtGui import QIntValidator, QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -64,6 +64,11 @@ LEVEL_COLORS = {
     "V": "#7f92bf",
 }
 GAP_COLOR = "#c792ea"
+
+# QTextBlock user states used for error navigation.
+BLOCK_STATE_ERROR = 1
+BLOCK_STATE_WARNING = 2
+BLOCK_STATE_GAP = 3
 
 STATUS_STYLES = {
     "idle": "background: #2a3450; color: #b9c7e6;",
@@ -354,6 +359,13 @@ class UdpLogGui(QMainWindow):
         self.clear_button = QPushButton("Clear")
         actions.addWidget(self.save_button)
         actions.addWidget(self.clear_button)
+
+        self.prev_error_button = QPushButton("⬆ Prev Error")
+        self.prev_error_button.setToolTip("Jump to the previous error line (Shift+F3)")
+        self.next_error_button = QPushButton("⬇ Next Error")
+        self.next_error_button.setToolTip("Jump to the next error line (F3)")
+        actions.addWidget(self.prev_error_button)
+        actions.addWidget(self.next_error_button)
         actions.addStretch(1)
 
         self.settings_toggle = QToolButton()
@@ -475,6 +487,12 @@ class UdpLogGui(QMainWindow):
         self.use_default_button.clicked.connect(self.use_project_default_target)
         self.copy_target_button.clicked.connect(self.copy_device_target)
         self.settings_toggle.toggled.connect(self._on_settings_toggled)
+        self.prev_error_button.clicked.connect(lambda: self._jump_to_error(forward=False))
+        self.next_error_button.clicked.connect(lambda: self._jump_to_error(forward=True))
+        QShortcut(QKeySequence("F3"), self, activated=lambda: self._jump_to_error(forward=True))
+        QShortcut(
+            QKeySequence("Shift+F3"), self, activated=lambda: self._jump_to_error(forward=False)
+        )
         self.filter_edit.textChanged.connect(self.render)
         self.feature_edit.textChanged.connect(self.render)
         self.level_combo.currentIndexChanged.connect(self.render)
@@ -722,7 +740,7 @@ class UdpLogGui(QMainWindow):
             shown = 0
             for record in appended:
                 if self._record_passes_filters(record):
-                    self.text.appendHtml(self._record_to_html(record, include_source))
+                    self._append_record_block(record, include_source)
                     shown += 1
             if shown:
                 self.shown_count += shown
@@ -779,6 +797,35 @@ class UdpLogGui(QMainWindow):
         weight = " font-weight: 700;" if record.level == "E" else ""
         return f'<span style="color: {color};{weight}">{escaped}</span>'
 
+    def _record_block_state(self, record: UdpLogRecord) -> int:
+        if record.feature == "udp.seq":
+            return BLOCK_STATE_GAP
+        if record.level == "E":
+            return BLOCK_STATE_ERROR
+        if record.level == "W":
+            return BLOCK_STATE_WARNING
+        return 0
+
+    def _append_record_block(self, record: UdpLogRecord, include_source: bool) -> None:
+        self.text.appendHtml(self._record_to_html(record, include_source))
+        self.text.document().lastBlock().setUserState(self._record_block_state(record))
+
+    def _jump_to_error(self, forward: bool) -> None:
+        block = self.text.textCursor().block()
+        block = block.next() if forward else block.previous()
+        while block.isValid():
+            if block.userState() == BLOCK_STATE_ERROR:
+                cursor = self.text.textCursor()
+                cursor.setPosition(block.position())
+                cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                self.auto_scroll_check.setChecked(False)
+                self.text.setTextCursor(cursor)
+                self.text.centerCursor()
+                return
+            block = block.next() if forward else block.previous()
+        direction = "below" if forward else "above"
+        self.statusBar().showMessage(f"No error lines {direction} the cursor", 3000)
+
     def render(self) -> None:
         include_source = self.show_source_check.isChecked()
         display_records = [r for r in self.records if self._record_passes_filters(r)]
@@ -786,7 +833,7 @@ class UdpLogGui(QMainWindow):
         self.text.setUpdatesEnabled(False)
         self.text.clear()
         for record in display_records:
-            self.text.appendHtml(self._record_to_html(record, include_source))
+            self._append_record_block(record, include_source)
         self.text.setUpdatesEnabled(True)
 
         self.shown_count = len(display_records)
