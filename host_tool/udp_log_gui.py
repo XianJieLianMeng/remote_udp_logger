@@ -57,14 +57,17 @@ SOCKET_TIMEOUT_SEC = 0.5
 PROJECT_DEFAULT_DEVICE_TARGET = "255.255.255.255:8001"
 DEFAULT_LANGUAGE = "zh"
 
+# VOFA-style graphite palette with a teal accent.
 LEVEL_COLORS = {
-    "E": "#ff7676",
-    "W": "#ffc46b",
-    "I": "#dbe6ff",
-    "D": "#9fb3dd",
-    "V": "#7f92bf",
+    "E": "#ff5f52",
+    "W": "#ffb300",
+    "I": "#d6d8da",
+    "D": "#8a9099",
+    "V": "#6f7680",
 }
-GAP_COLOR = "#c792ea"
+GAP_COLOR = "#b57edc"
+ACCENT = "#12a89d"
+MUTED = "#9aa0a6"
 
 # QTextBlock user states used for error navigation.
 BLOCK_STATE_ERROR = 1
@@ -72,10 +75,10 @@ BLOCK_STATE_WARNING = 2
 BLOCK_STATE_GAP = 3
 
 STATUS_STYLES = {
-    "idle": "background: #232b3f; color: #8b9bc0;",
-    "listening": "background: #17402c; color: #8dffb3;",
-    "paused": "background: #4d3d18; color: #ffd27d;",
-    "stopped": "background: #4a2531; color: #ff9f9f;",
+    "idle": "background: #3a3d40; color: #9aa0a6;",
+    "listening": "background: #14403a; color: #35e0c9;",
+    "paused": "background: #4a3b12; color: #ffcf6b;",
+    "stopped": "background: #4a2626; color: #ff8a80;",
 }
 
 # User-facing text catalog. Keep every visible string here so the UI stays
@@ -87,15 +90,15 @@ TEXTS = {
         "status_listening": "正在监听 udp://{url}",
         "status_paused": "已暂停显示 · 仍在接收与落盘",
         "status_stopped": "已停止",
-        "btn_start": "开始接收",
-        "btn_stop": "停止接收",
-        "btn_pause": "暂停显示",
-        "btn_resume": "恢复显示",
+        "btn_start": "开始",
+        "btn_stop": "停止",
+        "btn_pause": "暂停",
+        "btn_resume": "继续",
         "tip_pause": "冻结界面显示；日志仍在接收并写入会话文件",
-        "btn_export": "导出日志",
+        "btn_export": "导出",
         "btn_clear": "清空",
-        "btn_prev_error": "上一错误",
-        "btn_next_error": "下一错误",
+        "btn_prev_error": "↑ 错误",
+        "btn_next_error": "↓ 错误",
         "tip_prev_error": "跳到上一条错误行（Shift+F3）",
         "tip_next_error": "跳到下一条错误行（F3）",
         "settings": "接收设置",
@@ -156,13 +159,13 @@ TEXTS = {
         "status_stopped": "Stopped",
         "btn_start": "Start",
         "btn_stop": "Stop",
-        "btn_pause": "Pause View",
-        "btn_resume": "Resume View",
+        "btn_pause": "Pause",
+        "btn_resume": "Resume",
         "tip_pause": "Freeze the on-screen view; logs keep being received and journaled",
-        "btn_export": "Export Logs",
+        "btn_export": "Export",
         "btn_clear": "Clear",
-        "btn_prev_error": "Prev Error",
-        "btn_next_error": "Next Error",
+        "btn_prev_error": "↑ Err",
+        "btn_next_error": "↓ Err",
         "tip_prev_error": "Jump to the previous error line (Shift+F3)",
         "tip_next_error": "Jump to the next error line (F3)",
         "settings": "Receiver Settings",
@@ -387,98 +390,162 @@ class UdpLogGui(QMainWindow):
     # UI construction
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
-        # One dominant blue-gray hue family; strong color is reserved for the
-        # status pill, the primary action, and log levels.
+        # VOFA-style: graphite gray chassis, one teal accent, compact flat
+        # controls, actions on a left rail like an instrument tool bar.
         self.setStyleSheet(
             """
-            QMainWindow { background: #0e1320; }
-            QLabel { color: #e2e9f8; font-size: 13px; }
-            QFrame#card { background: #151b2c; border: 1px solid #222b40; border-radius: 10px; }
+            QMainWindow { background: #2b2d30; }
+            QLabel { color: #d6d8da; font-size: 13px; }
+            QFrame#rail { background: #26282b; border-right: 1px solid #1f2123; }
+            QFrame#card { background: #333639; border: 1px solid #45484c; border-radius: 6px; }
+            QFrame#railline { background: #3d4043; max-height: 1px; min-height: 1px; border: none; }
             QLineEdit {
-                background: #0d1424;
-                border: 1px solid #2a3245;
-                border-radius: 6px;
-                color: #e2e9f8;
-                padding: 6px 9px;
-                selection-background-color: #3a6ea5;
+                background: #26282b;
+                border: 1px solid #46494d;
+                border-radius: 4px;
+                color: #d6d8da;
+                padding: 5px 8px;
+                selection-background-color: #12a89d;
             }
-            QLineEdit:focus { border: 1px solid #57a8e8; }
+            QLineEdit:focus { border: 1px solid #12a89d; }
+            QLineEdit:disabled { color: #6f7680; background: #2f3134; }
             QComboBox {
-                background: #0d1424;
-                border: 1px solid #2a3245;
-                border-radius: 6px;
-                color: #e2e9f8;
-                padding: 5px 9px;
+                background: #26282b;
+                border: 1px solid #46494d;
+                border-radius: 4px;
+                color: #d6d8da;
+                padding: 4px 8px;
             }
-            QComboBox:focus { border: 1px solid #57a8e8; }
+            QComboBox:focus { border: 1px solid #12a89d; }
             QComboBox QAbstractItemView {
-                background: #151b2c;
-                color: #e2e9f8;
-                selection-background-color: #3a6ea5;
+                background: #333639;
+                color: #d6d8da;
+                selection-background-color: #12a89d;
             }
             QPushButton {
-                background: #1d2537;
-                border: 1px solid #2e3850;
-                border-radius: 6px;
-                color: #c9d6f2;
-                padding: 7px 14px;
+                background: #3a3d40;
+                border: 1px solid #4a4d50;
+                border-radius: 4px;
+                color: #c9cccf;
+                padding: 6px 10px;
             }
-            QPushButton:hover { background: #263149; }
-            QPushButton:pressed { background: #161d2c; }
+            QPushButton:hover { background: #44474b; border: 1px solid #56595d; }
+            QPushButton:pressed { background: #2f3134; }
             QPushButton#primary {
-                background: #2f5fa8;
-                border: 1px solid #4179cc;
-                color: #f0f6ff;
-                font-weight: 600;
+                background: #12a89d;
+                border: 1px solid #17bfb2;
+                color: #0c2320;
+                font-weight: 700;
             }
-            QPushButton#primary:hover { background: #386fc0; }
+            QPushButton#primary:hover { background: #16c0b3; }
             QPushButton#primary[running="true"] {
-                background: #6b3040;
-                border: 1px solid #8f4054;
+                background: #5c2f2f;
+                border: 1px solid #7a3d3d;
+                color: #ffb3ab;
             }
-            QPushButton#primary[running="true"]:hover { background: #7d3a4c; }
+            QPushButton#primary[running="true"]:hover { background: #6d3838; }
             QPushButton#pause:checked {
-                background: #4d3d18;
-                border: 1px solid #806524;
-                color: #ffd27d;
+                background: #4a3b12;
+                border: 1px solid #6d591f;
+                color: #ffcf6b;
             }
             QToolButton {
                 background: transparent;
                 border: none;
-                color: #8b9bc0;
+                color: #9aa0a6;
                 font-weight: 600;
                 padding: 4px;
             }
-            QToolButton:hover { color: #c9d6f2; }
-            QCheckBox { color: #c9d6f2; spacing: 6px; font-size: 13px; }
+            QToolButton:hover { color: #d6d8da; }
+            QCheckBox { color: #c9cccf; spacing: 6px; font-size: 13px; }
+            QCheckBox::indicator:checked { background: #12a89d; border: 1px solid #17bfb2; }
+            QCheckBox::indicator { width: 13px; height: 13px; border: 1px solid #56595d; border-radius: 3px; background: #26282b; }
             QPlainTextEdit {
-                background: #0a0f1b;
-                border: 1px solid #222b40;
-                border-radius: 10px;
-                color: #dbe6ff;
-                padding: 10px;
-                selection-background-color: #3a6ea5;
+                background: #1b1d1f;
+                border: 1px solid #3d4043;
+                border-radius: 6px;
+                color: #d6d8da;
+                padding: 8px;
+                selection-background-color: #126560;
                 font-family: Consolas, "Courier New", monospace;
                 font-size: 10.5pt;
             }
-            QStatusBar { color: #8b9bc0; font-size: 12px; }
-            QStatusBar QLabel { color: #8b9bc0; font-size: 12px; }
+            QStatusBar { color: #9aa0a6; font-size: 12px; background: #26282b; }
+            QStatusBar QLabel { color: #9aa0a6; font-size: 12px; }
             """
         )
 
         central = QWidget(self)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(14, 12, 14, 6)
-        root.setSpacing(8)
+        outer = QHBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         self.setCentralWidget(central)
 
-        # -- Header: title + status pill + stats + language ----------------
+        # -- Left action rail (VOFA-style tool column) ---------------------
+        rail = QFrame()
+        rail.setObjectName("rail")
+        rail.setFixedWidth(86)
+        rail_box = QVBoxLayout(rail)
+        rail_box.setContentsMargins(8, 10, 8, 10)
+        rail_box.setSpacing(6)
+        outer.addWidget(rail)
+
+        self.start_stop_button = QPushButton()
+        self.start_stop_button.setObjectName("primary")
+        self.start_stop_button.setMinimumHeight(38)
+        rail_box.addWidget(self.start_stop_button)
+
+        self.pause_button = QPushButton()
+        self.pause_button.setObjectName("pause")
+        self.pause_button.setCheckable(True)
+        rail_box.addWidget(self.pause_button)
+
+        def rail_divider() -> QFrame:
+            line = QFrame()
+            line.setObjectName("railline")
+            return line
+
+        rail_box.addWidget(rail_divider())
+
+        self.prev_error_button = QPushButton()
+        self.next_error_button = QPushButton()
+        rail_box.addWidget(self.prev_error_button)
+        rail_box.addWidget(self.next_error_button)
+
+        rail_box.addWidget(rail_divider())
+
+        self.save_button = QPushButton()
+        self.clear_button = QPushButton()
+        rail_box.addWidget(self.save_button)
+        rail_box.addWidget(self.clear_button)
+        rail_box.addStretch(1)
+
+        self.settings_toggle = QToolButton()
+        self.settings_toggle.setCheckable(True)
+        self.settings_toggle.setChecked(True)
+        self.settings_toggle.setArrowType(Qt.DownArrow)
+        self.settings_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        rail_box.addWidget(self.settings_toggle)
+
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("中文", "zh")
+        self.language_combo.addItem("English", "en")
+        rail_box.addWidget(self.language_combo)
+
+        # -- Main content column -------------------------------------------
+        content = QWidget()
+        root = QVBoxLayout(content)
+        root.setContentsMargins(12, 10, 12, 6)
+        root.setSpacing(8)
+        outer.addWidget(content, 1)
+
+        # -- Header: title + status pill + stats ---------------------------
         header = QHBoxLayout()
         header.setSpacing(12)
         root.addLayout(header)
 
         self.title_label = QLabel()
-        self.title_label.setStyleSheet("font-size: 16px; font-weight: 600;")
+        self.title_label.setStyleSheet("font-size: 15px; font-weight: 600;")
         header.addWidget(self.title_label)
 
         self.status_label = QLabel()
@@ -486,46 +553,8 @@ class UdpLogGui(QMainWindow):
         header.addStretch(1)
 
         self.stats_label = QLabel("")
-        self.stats_label.setStyleSheet("color: #8b9bc0; font-size: 12px;")
+        self.stats_label.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
         header.addWidget(self.stats_label)
-
-        self.language_combo = QComboBox()
-        self.language_combo.addItem("中文", "zh")
-        self.language_combo.addItem("English", "en")
-        self.language_combo.setFixedWidth(96)
-        header.addWidget(self.language_combo)
-
-        # -- Action toolbar ----------------------------------------------
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
-        root.addLayout(actions)
-
-        self.start_stop_button = QPushButton()
-        self.start_stop_button.setObjectName("primary")
-        self.start_stop_button.setMinimumWidth(112)
-        actions.addWidget(self.start_stop_button)
-
-        self.pause_button = QPushButton()
-        self.pause_button.setObjectName("pause")
-        self.pause_button.setCheckable(True)
-        actions.addWidget(self.pause_button)
-
-        self.save_button = QPushButton()
-        self.clear_button = QPushButton()
-        self.prev_error_button = QPushButton()
-        self.next_error_button = QPushButton()
-        actions.addWidget(self.save_button)
-        actions.addWidget(self.clear_button)
-        actions.addWidget(self.prev_error_button)
-        actions.addWidget(self.next_error_button)
-        actions.addStretch(1)
-
-        self.settings_toggle = QToolButton()
-        self.settings_toggle.setCheckable(True)
-        self.settings_toggle.setChecked(True)
-        self.settings_toggle.setArrowType(Qt.DownArrow)
-        self.settings_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        actions.addWidget(self.settings_toggle)
 
         # -- Collapsible settings card ------------------------------------
         self.settings_card = QFrame()
@@ -553,12 +582,12 @@ class UdpLogGui(QMainWindow):
         grid.addWidget(self.refresh_button, 1, 2)
 
         self.hint_label = QLabel()
-        self.hint_label.setStyleSheet("color: #8b9bc0; font-size: 12px;")
+        self.hint_label.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
         self.hint_label.setWordWrap(True)
         grid.addWidget(self.hint_label, 2, 0, 1, 6)
 
         self.network_info_label = QLabel()
-        self.network_info_label.setStyleSheet("color: #8b9bc0; font-size: 12px;")
+        self.network_info_label.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
         grid.addWidget(self.network_info_label, 3, 0, 1, 6)
 
         self.device_target_label = QLabel()
@@ -1140,7 +1169,7 @@ class UdpLogGui(QMainWindow):
             # blank pane that reads as "the filter did nothing".
             message = html.escape(self.tr_text("no_match", buffered=len(self.records)))
             self.text.appendHtml(
-                f'<span style="color: #8b9bc0; font-style: italic;">{message}</span>'
+                f'<span style="color: {MUTED}; font-style: italic;">{message}</span>'
             )
         self.text.setUpdatesEnabled(True)
 
@@ -1152,7 +1181,7 @@ class UdpLogGui(QMainWindow):
     def _update_stats(self) -> None:
         summary = self.tr_text("stats", shown=self.shown_count, buffered=len(self.records))
         filter_tag = (
-            f'<span style="color: #57a8e8; font-weight: 700;">'
+            f'<span style="color: {ACCENT}; font-weight: 700;">'
             f"[{self.tr_text('filter_active')}]</span>    "
             if self._has_active_filters()
             else ""

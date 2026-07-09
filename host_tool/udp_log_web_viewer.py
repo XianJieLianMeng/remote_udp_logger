@@ -28,22 +28,21 @@ HTML_PAGE = """<!doctype html>
   <title>Remote UDP Log Viewer</title>
   <style>
     :root {
-      --bg: #0b1020;
-      --panel: #131a2e;
-      --line: #1e2742;
-      --text: #dbe6ff;
-      --muted: #8ea2d0;
-      --accent: #5cc8ff;
-      --accent-2: #8dffb3;
-      --danger: #ff8f8f;
+      /* VOFA-style graphite palette with a teal accent. */
+      --bg: #2b2d30;
+      --panel: #333639;
+      --line: #45484c;
+      --text: #d6d8da;
+      --muted: #9aa0a6;
+      --accent: #12a89d;
+      --accent-2: #35e0c9;
+      --danger: #ff5f52;
+      --log-bg: #1b1d1f;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background:
-        radial-gradient(circle at top left, rgba(92, 200, 255, 0.14), transparent 28%),
-        radial-gradient(circle at top right, rgba(141, 255, 179, 0.08), transparent 24%),
-        var(--bg);
+      background: var(--bg);
       color: var(--text);
       font: 14px/1.5 Consolas, "SFMono-Regular", Menlo, Monaco, monospace;
     }
@@ -69,7 +68,7 @@ HTML_PAGE = """<!doctype html>
       margin-top: 4px;
     }
     .status-card {
-      background: rgba(19, 26, 46, 0.9);
+      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 16px;
       padding: 14px 16px;
@@ -94,7 +93,7 @@ HTML_PAGE = """<!doctype html>
     .toolbar input {
       min-width: 260px;
       flex: 1;
-      background: rgba(19, 26, 46, 0.9);
+      background: var(--panel);
       color: var(--text);
       border: 1px solid var(--line);
       border-radius: 12px;
@@ -102,7 +101,7 @@ HTML_PAGE = """<!doctype html>
       outline: none;
     }
     .toolbar select {
-      background: rgba(19, 26, 46, 0.9);
+      background: var(--panel);
       color: var(--text);
       border: 1px solid var(--line);
       border-radius: 12px;
@@ -110,21 +109,22 @@ HTML_PAGE = """<!doctype html>
       outline: none;
     }
     .toolbar button {
-      background: linear-gradient(135deg, var(--accent), #6ea8ff);
-      color: #05101e;
-      border: 0;
-      border-radius: 12px;
+      background: var(--accent);
+      color: #0c2320;
+      border: 1px solid var(--accent-2);
+      border-radius: 6px;
       padding: 10px 16px;
       font-weight: 700;
       cursor: pointer;
     }
+    .toolbar button:hover { background: #16c0b3; }
     .toolbar button.secondary {
-      background: rgba(19, 26, 46, 0.9);
+      background: var(--panel);
       color: var(--text);
       border: 1px solid var(--line);
     }
     .log-panel {
-      background: rgba(19, 26, 46, 0.92);
+      background: var(--log-bg);
       border: 1px solid var(--line);
       border-radius: 18px;
       overflow: hidden;
@@ -145,11 +145,11 @@ HTML_PAGE = """<!doctype html>
       display: inline-block;
       margin-right: 8px;
       background: var(--danger);
-      box-shadow: 0 0 12px rgba(255, 143, 143, 0.45);
+      box-shadow: 0 0 8px rgba(255, 95, 82, 0.45);
     }
     .dot.connected {
       background: var(--accent-2);
-      box-shadow: 0 0 12px rgba(141, 255, 179, 0.45);
+      box-shadow: 0 0 8px rgba(53, 224, 201, 0.45);
     }
     #log {
       margin: 0;
@@ -160,18 +160,19 @@ HTML_PAGE = """<!doctype html>
       word-break: break-word;
     }
     #log .line { white-space: pre-wrap; }
-    #log .lv-E { color: #ff7676; font-weight: 700; }
-    #log .lv-W { color: #ffc46b; }
+    #log .lv-E { color: #ff5f52; font-weight: 700; }
+    #log .lv-W { color: #ffb300; }
     #log .lv-I { color: var(--text); }
-    #log .lv-D { color: #9fb3dd; }
-    #log .lv-V { color: #7f92bf; }
-    #log .lv-gap { color: #c792ea; font-style: italic; }
-    .count-e { color: #ff7676; font-weight: 700; }
-    .count-w { color: #ffc46b; font-weight: 700; }
-    .count-gap { color: #c792ea; font-weight: 700; }
+    #log .lv-D { color: #8a9099; }
+    #log .lv-V { color: #6f7680; }
+    #log .lv-gap { color: #b57edc; font-style: italic; }
+    .count-e { color: #ff5f52; font-weight: 700; }
+    .count-w { color: #ffb300; font-weight: 700; }
+    .count-gap { color: #b57edc; font-weight: 700; }
     .toolbar button.paused {
-      background: linear-gradient(135deg, #ffd27d, #ffb45c);
-      color: #241a05;
+      background: #4a3b12;
+      border: 1px solid #6d591f;
+      color: #ffcf6b;
     }
     .hint {
       color: var(--muted);
