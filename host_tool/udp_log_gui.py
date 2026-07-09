@@ -125,6 +125,13 @@ TEXTS = {
         "stats_gaps": "丢包",
         "sb_latest_source": "最新来源：{source}",
         "sb_session": "会话文件：{path}",
+        "filter_active": "过滤中",
+        "no_match": "当前过滤条件下没有匹配日志（缓存 {buffered} 行）",
+        "tip_locked_running": "接收中不可修改，请先停止接收",
+        "export_scope_title": "导出范围",
+        "export_scope_question": "当前有过滤条件生效。导出全部日志，还是仅导出过滤结果（最近缓存 {buffered} 行内的匹配行）？",
+        "export_all_button": "导出全部",
+        "export_filtered_button": "仅过滤结果",
         "msg_invalid_port_title": "端口无效",
         "msg_invalid_port": "UDP 端口无效：{port}",
         "msg_start_failed_title": "启动失败",
@@ -185,6 +192,13 @@ TEXTS = {
         "stats_gaps": "Gaps",
         "sb_latest_source": "Latest source: {source}",
         "sb_session": "Session file: {path}",
+        "filter_active": "Filtered",
+        "no_match": "No logs match the current filters ({buffered} lines buffered)",
+        "tip_locked_running": "Locked while receiving; stop the receiver to edit",
+        "export_scope_title": "Export Scope",
+        "export_scope_question": "Filters are active. Export everything, or only the filtered result (matches within the last {buffered} buffered lines)?",
+        "export_all_button": "Export All",
+        "export_filtered_button": "Filtered Only",
         "msg_invalid_port_title": "Invalid Port",
         "msg_invalid_port": "UDP port is invalid: {port}",
         "msg_start_failed_title": "Start Failed",
@@ -551,6 +565,7 @@ class UdpLogGui(QMainWindow):
         grid.addWidget(self.device_target_label, 4, 0)
         self.device_target_edit = QLineEdit(PROJECT_DEFAULT_DEVICE_TARGET)
         self.device_target_edit.setMinimumWidth(240)
+        self.device_target_edit.setClearButtonEnabled(True)
         grid.addWidget(self.device_target_edit, 5, 0, 1, 2)
 
         self.use_detected_button = QPushButton()
@@ -570,6 +585,7 @@ class UdpLogGui(QMainWindow):
 
         self.filter_edit = QLineEdit()
         self.filter_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.filter_edit.setClearButtonEnabled(True)
         toolbar.addWidget(self.filter_edit)
 
         self.level_combo = QComboBox()
@@ -578,6 +594,7 @@ class UdpLogGui(QMainWindow):
 
         self.feature_edit = QLineEdit()
         self.feature_edit.setMinimumWidth(130)
+        self.feature_edit.setClearButtonEnabled(True)
         toolbar.addWidget(self.feature_edit)
 
         self.device_combo = QComboBox()
@@ -772,6 +789,7 @@ class UdpLogGui(QMainWindow):
         self.listen_url = f"{host}:{port}"
         self._set_status("listening")
         self._set_start_button_running(True)
+        self._set_receiver_inputs_locked(True)
         self.settings_toggle.setChecked(False)
         self._save_config()
 
@@ -782,9 +800,18 @@ class UdpLogGui(QMainWindow):
         was_running = self.running
         self.running = False
         self._set_start_button_running(False)
+        self._set_receiver_inputs_locked(False)
         if was_running:
             self._set_status("stopped")
             self.settings_toggle.setChecked(True)
+
+    def _set_receiver_inputs_locked(self, locked: bool) -> None:
+        # The receiver binds once at start; editing host/port while running
+        # would silently do nothing, so lock the fields to make that explicit.
+        tooltip = self.tr_text("tip_locked_running") if locked else ""
+        for widget in (self.udp_host_edit, self.udp_port_edit):
+            widget.setEnabled(not locked)
+            widget.setToolTip(tooltip)
 
     def _set_start_button_running(self, running: bool) -> None:
         self.start_stop_button.setText(
@@ -844,7 +871,31 @@ class UdpLogGui(QMainWindow):
         self._refresh_device_combo()
         self.render()
 
+    def _ask_export_filtered_only(self) -> bool | None:
+        """True = filtered only, False = everything, None = cancelled."""
+        if not self._has_active_filters():
+            return False
+        box = QMessageBox(self)
+        box.setWindowTitle(self.tr_text("export_scope_title"))
+        box.setText(self.tr_text("export_scope_question", buffered=len(self.records)))
+        all_button = box.addButton(self.tr_text("export_all_button"), QMessageBox.AcceptRole)
+        filtered_button = box.addButton(
+            self.tr_text("export_filtered_button"), QMessageBox.AcceptRole
+        )
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is filtered_button:
+            return True
+        if clicked is all_button:
+            return False
+        return None
+
     def save_logs(self) -> None:
+        filtered_only = self._ask_export_filtered_only()
+        if filtered_only is None:
+            return
+
         path, selected_filter = QFileDialog.getSaveFileName(
             self,
             self.tr_text("export_dialog_title"),
@@ -856,7 +907,20 @@ class UdpLogGui(QMainWindow):
         try:
             output_path = Path(path)
             wants_jsonl = path.lower().endswith(".jsonl") or "json lines" in selected_filter.lower()
-            if wants_jsonl:
+            if filtered_only:
+                display_records = [r for r in self.records if self._record_passes_filters(r)]
+                if wants_jsonl:
+                    if output_path.suffix.lower() != ".jsonl":
+                        output_path = output_path.with_suffix(".jsonl")
+                    text = "".join(
+                        format_udp_log_record_jsonl(record) for record in display_records
+                    )
+                else:
+                    text = "".join(
+                        self._format_record(record, include_source=True)
+                        for record in display_records
+                    )
+            elif wants_jsonl:
                 if output_path.suffix.lower() != ".jsonl":
                     output_path = output_path.with_suffix(".jsonl")
                 text = self.jsonl_journal.read_text()
@@ -996,6 +1060,14 @@ class UdpLogGui(QMainWindow):
     def _format_record(self, record: UdpLogRecord, include_source: bool) -> str:
         return format_udp_log_record(record, include_source=include_source)
 
+    def _has_active_filters(self) -> bool:
+        return bool(
+            self.filter_edit.text().strip()
+            or self.feature_edit.text().strip()
+            or str(self.level_combo.currentData() or "")
+            or self._selected_device_imei()
+        )
+
     def _record_passes_filters(self, record: UdpLogRecord) -> bool:
         selected_imei = self._selected_device_imei()
         if selected_imei and record.imei != selected_imei:
@@ -1063,6 +1135,13 @@ class UdpLogGui(QMainWindow):
         self.text.clear()
         for record in display_records:
             self._append_record_block(record, include_source)
+        if not display_records and self.records:
+            # Filtered to zero: show an explicit empty state instead of a
+            # blank pane that reads as "the filter did nothing".
+            message = html.escape(self.tr_text("no_match", buffered=len(self.records)))
+            self.text.appendHtml(
+                f'<span style="color: #8b9bc0; font-style: italic;">{message}</span>'
+            )
         self.text.setUpdatesEnabled(True)
 
         self.shown_count = len(display_records)
@@ -1072,8 +1151,14 @@ class UdpLogGui(QMainWindow):
 
     def _update_stats(self) -> None:
         summary = self.tr_text("stats", shown=self.shown_count, buffered=len(self.records))
+        filter_tag = (
+            f'<span style="color: #57a8e8; font-weight: 700;">'
+            f"[{self.tr_text('filter_active')}]</span>    "
+            if self._has_active_filters()
+            else ""
+        )
         self.stats_label.setText(
-            f"{summary}"
+            f"{filter_tag}{summary}"
             f'    <span style="color: {LEVEL_COLORS["E"]};">E {self.error_count}</span>'
             f'    <span style="color: {LEVEL_COLORS["W"]};">W {self.warning_count}</span>'
             f'    <span style="color: {GAP_COLOR};">{self.tr_text("stats_gaps")} {self.gap_count}</span>'

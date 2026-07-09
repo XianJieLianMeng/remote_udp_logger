@@ -345,7 +345,12 @@ HTML_PAGE = """<!doctype html>
 
     function render() {
       const output = state.lines.filter(passesFilters);
-      logEl.innerHTML = output.map(lineHtml).join("");
+      if (!output.length && state.lines.length) {
+        logEl.innerHTML = '<div class="line" id="emptyState" style="color: var(--muted); font-style: italic;">'
+          + "当前过滤条件下没有匹配日志（缓存 " + state.lines.length + " 行）</div>";
+      } else {
+        logEl.innerHTML = output.map(lineHtml).join("");
+      }
       state.shown = output.length;
       updateStats();
       if (state.autoScroll) {
@@ -357,6 +362,10 @@ HTML_PAGE = """<!doctype html>
       if (!passesFilters(record)) {
         updateStats();
         return;
+      }
+      const emptyState = document.getElementById("emptyState");
+      if (emptyState) {
+        emptyState.remove();
       }
       logEl.insertAdjacentHTML("beforeend", lineHtml(record));
       while (logEl.childElementCount > MAX_LINES) {
